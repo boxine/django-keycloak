@@ -2,7 +2,7 @@ import mock
 
 from datetime import datetime
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from keycloak.openid_connect import KeycloakOpenidConnect
 
 from django_keycloak.factories import ClientFactory, \
@@ -116,6 +116,120 @@ class ServicesOpenIDProfileGetOrCreateFromIdTokenTestCase(
         self.assertEqual(profile.user.pk, existing_user.pk)
         self.assertEqual(profile.user.username, 'some-sub')
         self.assertEqual(profile.user.email, 'test@example.com')
+        self.assertEqual(profile.user.first_name, 'Some given name')
+        self.assertEqual(profile.user.last_name, 'Some family name')
+
+    @override_settings(KEYCLOAK_USERNAME_TOKEN_ATTRIBUTE='email')
+    def test_create_with_existing_user_new_profile_different_token_attribute(self):
+
+        client = ClientFactory(realm___certs='{}',
+                               realm___well_known_oidc='{"issuer": "https://issuer"}')
+
+        client.openid_api_client = mock.MagicMock(spec_set=KeycloakOpenidConnect)
+        client.openid_api_client.well_known = {
+            'id_token_signing_alg_values_supported': ['signing-alg']
+        }
+        client.openid_api_client.decode_token.return_value = {
+            'sub': 'some-sub',
+            'email': 'test@example.com',
+            'given_name': 'Some given name',
+            'family_name': 'Some family name'
+        }
+
+        existing_user = UserFactory(username='test@example.com')
+
+        profile = django_keycloak.services.oidc_profile.\
+            get_or_create_from_id_token(
+                client=client, id_token='some-id-token'
+            )
+        client.openid_api_client.decode_token.assert_called_with(
+            token='some-id-token',
+            key=dict(),
+            algorithms=['signing-alg'],
+            issuer='https://issuer'
+        )
+
+        self.assertEqual(profile.sub, 'some-sub')
+        self.assertEqual(profile.user.pk, existing_user.pk)
+        self.assertEqual(profile.user.username, 'test@example.com')
+        self.assertEqual(profile.user.email, 'test@example.com')
+        self.assertEqual(profile.user.first_name, 'Some given name')
+        self.assertEqual(profile.user.last_name, 'Some family name')
+
+    @override_settings(KEYCLOAK_USERNAME_TOKEN_ATTRIBUTE='foo.bar')
+    def test_create_with_existing_user_new_profile_token_attribute_nested(self):
+
+        client = ClientFactory(realm___certs='{}',
+                               realm___well_known_oidc='{"issuer": "https://issuer"}')
+
+        client.openid_api_client = mock.MagicMock(spec_set=KeycloakOpenidConnect)
+        client.openid_api_client.well_known = {
+            'id_token_signing_alg_values_supported': ['signing-alg']
+        }
+        client.openid_api_client.decode_token.return_value = {
+            'sub': 'some-sub',
+            'email': 'test@example.com',
+            'given_name': 'Some given name',
+            'family_name': 'Some family name',
+            'foo': {
+                'bar': 'joe.random'
+            }
+        }
+
+        existing_user = UserFactory(username='joe.random')
+
+        profile = django_keycloak.services.oidc_profile.\
+            get_or_create_from_id_token(
+                client=client, id_token='some-id-token'
+            )
+        client.openid_api_client.decode_token.assert_called_with(
+            token='some-id-token',
+            key=dict(),
+            algorithms=['signing-alg'],
+            issuer='https://issuer'
+        )
+
+        self.assertEqual(profile.sub, 'some-sub')
+        self.assertEqual(profile.user.pk, existing_user.pk)
+        self.assertEqual(profile.user.username, 'joe.random')
+        self.assertEqual(profile.user.email, 'test@example.com')
+        self.assertEqual(profile.user.first_name, 'Some given name')
+        self.assertEqual(profile.user.last_name, 'Some family name')
+
+    @override_settings(KEYCLOAK_USERNAME_FIELD='email')
+    def test_create_with_existing_user_new_profile_different_username_field(self):
+
+        client = ClientFactory(realm___certs='{}',
+                               realm___well_known_oidc='{"issuer": "https://issuer"}')
+
+        client.openid_api_client = mock.MagicMock(spec_set=KeycloakOpenidConnect)
+        client.openid_api_client.well_known = {
+            'id_token_signing_alg_values_supported': ['signing-alg']
+        }
+        client.openid_api_client.decode_token.return_value = {
+            'sub': 'test@example.com',
+            'email': 'doesnotexist@example.com',
+            'given_name': 'Some given name',
+            'family_name': 'Some family name'
+        }
+
+        existing_user = UserFactory(username='some-sub', email='test@example.com')
+
+        profile = django_keycloak.services.oidc_profile.\
+            get_or_create_from_id_token(
+                client=client, id_token='some-id-token'
+            )
+        client.openid_api_client.decode_token.assert_called_with(
+            token='some-id-token',
+            key=dict(),
+            algorithms=['signing-alg'],
+            issuer='https://issuer'
+        )
+
+        self.assertEqual(profile.sub, 'test@example.com')
+        self.assertEqual(profile.user.pk, existing_user.pk)
+        self.assertEqual(profile.user.username, 'test@example.com')
+        self.assertEqual(profile.user.email, 'doesnotexist@example.com')
         self.assertEqual(profile.user.first_name, 'Some given name')
         self.assertEqual(profile.user.last_name, 'Some family name')
 
