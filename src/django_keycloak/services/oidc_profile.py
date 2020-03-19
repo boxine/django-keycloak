@@ -116,7 +116,7 @@ def update_or_create_user_and_oidc_profile(client, id_token_object):
 
         user_query_field = getattr(settings, 'KEYCLOAK_USERNAME_FIELD', UserModel.USERNAME_FIELD)
         username_field = UserModel.USERNAME_FIELD
-        email_field_name = UserModel.get_email_field_name()
+        email_field = UserModel.get_email_field_name()
 
         user_identifier = id_token_object.get('preferred_username', id_token_object['sub'])
         if hasattr(settings, 'KEYCLOAK_USERNAME_TOKEN_ATTRIBUTE'):
@@ -126,12 +126,10 @@ def update_or_create_user_and_oidc_profile(client, id_token_object):
 
         defaults = {
             'first_name': id_token_object.get('given_name', ''),
-            'last_name': id_token_object.get('family_name', '')
+            'last_name': id_token_object.get('family_name', ''),
+            username_field: user_identifier,
+            email_field: id_token_object.get('email', '')
         }
-        if username_field != email_field_name:
-            defaults[email_field_name] = id_token_object.get('email', '')
-        if user_query_field != username_field:
-            defaults[username_field] = user_identifier
 
         user, _ = UserModel.objects.update_or_create(defaults=defaults, **{
                 user_query_field: user_identifier
