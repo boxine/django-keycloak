@@ -75,6 +75,18 @@ def get_or_create_from_id_token(client, id_token):
         client=client, id_token_object=id_token_object)
 
 
+def resolve_token_attribute(id_token_object, token_attribute):
+    if '.' not in token_attribute:
+        return id_token_object.get(token_attribute)
+
+    o = id_token_object
+    for s in token_attribute.split('.'):
+        o = o.get(s)
+        if o is None:
+            break
+    return o
+
+
 def update_or_create_user_and_oidc_profile(client, id_token_object):
     """
 
@@ -102,8 +114,15 @@ def update_or_create_user_and_oidc_profile(client, id_token_object):
     with transaction.atomic():
         UserModel = get_user_model()
 
+        user_query_field = getattr(settings, 'KEYCLOAK_USERNAME_FIELD', UserModel.USERNAME_FIELD)
         username_field = UserModel.USERNAME_FIELD
         email_field_name = UserModel.get_email_field_name()
+
+        user_identifier = id_token_object.get('preferred_username', id_token_object['sub'])
+        if hasattr(settings, 'KEYCLOAK_USERNAME_TOKEN_ATTRIBUTE'):
+            resolved = resolve_token_attribute(id_token_object,
+                                               settings.KEYCLOAK_USERNAME_TOKEN_ATTRIBUTE)
+            user_identifier = resolved or user_identifier
 
         defaults = {
             'first_name': id_token_object.get('given_name', ''),
@@ -111,9 +130,11 @@ def update_or_create_user_and_oidc_profile(client, id_token_object):
         }
         if username_field != email_field_name:
             defaults[email_field_name] = id_token_object.get('email', '')
+        if user_query_field != username_field:
+            defaults[username_field] = user_identifier
 
         user, _ = UserModel.objects.update_or_create(defaults=defaults, **{
-                username_field: id_token_object.get('preferred_username', id_token_object['sub'])
+                user_query_field: user_identifier
             }
         )
 
