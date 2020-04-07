@@ -270,3 +270,32 @@ class ServicesOpenIDProfileGetOrCreateFromIdTokenTestCase(
         self.assertEqual(profile.user.email, 'test@example.com')
         self.assertEqual(profile.user.first_name, 'Some given name')
         self.assertEqual(profile.user.last_name, 'Some family name')
+
+    @override_settings(KEYCLOAK_USERPROFILE_FACTORY='django_keycloak.tests.services.oidc_profile.'
+                                                    'test_get_or_create_from_id_token.'
+                                                    'user_profile_factory_dummy')
+    def test_create_new_profile_with_factory(self):
+
+        profile = django_keycloak.services.oidc_profile. \
+            get_or_create_from_id_token(
+                client=self.client, id_token='some-id-token'
+            )
+
+        self.client.openid_api_client.decode_token.assert_called_with(
+            token='some-id-token',
+            key=dict(),
+            algorithms=['signing-alg'],
+            issuer='https://issuer'
+        )
+
+        self.assertEqual(profile.sub, 'some-sub')
+        self.assertEqual(profile.user.username, 'some-sub')
+        self.assertEqual(profile.user.email, 'test@example.com')
+        self.assertEqual(profile.user.first_name, 'Firstname changed in factory')
+        self.assertEqual(profile.user.last_name, 'Lastname changed in factory')
+
+
+def user_profile_factory_dummy(defaults, token):
+    defaults['first_name'] = 'Firstname changed in factory'
+    defaults['last_name'] = 'Lastname changed in factory'
+    return defaults
