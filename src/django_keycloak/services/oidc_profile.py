@@ -87,6 +87,10 @@ def resolve_token_attribute(id_token_object, token_attribute):
     return o
 
 
+def default_user_profile_factory(defaults, token):
+    return defaults
+
+
 def update_or_create_user_and_oidc_profile(client, id_token_object):
     """
 
@@ -124,17 +128,25 @@ def update_or_create_user_and_oidc_profile(client, id_token_object):
                                                settings.KEYCLOAK_USERNAME_TOKEN_ATTRIBUTE)
             user_identifier = resolved or user_identifier
 
+        user_profile_factory = default_user_profile_factory
+        if hasattr(settings, 'KEYCLOAK_USERPROFILE_FACTORY'):
+            user_profile_factory = import_string(settings.KEYCLOAK_USERPROFILE_FACTORY)
+
+        if not callable(user_profile_factory):
+            raise AttributeError(f'{settings.KEYCLOAK_USERPROFILE_FACTORY} is not callable')
+
         defaults = {
             'first_name': id_token_object.get('given_name', ''),
             'last_name': id_token_object.get('family_name', ''),
-            username_field: user_identifier,
-            email_field: id_token_object.get('email', '')
         }
+        defaults = user_profile_factory(defaults, id_token_object)
+
+        defaults[username_field] = user_identifier
+        defaults[email_field] = id_token_object.get('email', '')
 
         user, _ = UserModel.objects.update_or_create(defaults=defaults, **{
-                user_query_field: user_identifier
-            }
-        )
+            user_query_field: user_identifier
+        })
 
         oidc_profile, _ = OpenIdConnectProfileModel.objects.update_or_create(
             sub=id_token_object['sub'],
